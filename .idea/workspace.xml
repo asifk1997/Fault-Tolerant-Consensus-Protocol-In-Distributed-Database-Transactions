@@ -2,9 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="b64a88f2-3aab-4d23-9dfc-bc54b16b7f4e" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/go1.go" beforeDir="false" afterPath="$PROJECT_DIR$/go1.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go2.go" beforeDir="false" afterPath="$PROJECT_DIR$/go2.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go3.go" beforeDir="false" afterPath="$PROJECT_DIR$/go3.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
