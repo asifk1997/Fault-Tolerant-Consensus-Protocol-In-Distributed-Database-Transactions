@@ -39,6 +39,7 @@ type transaction struct {
 }
 var listTransactions []transaction
 var m = map[string]string{}
+var sent bool = false
 ///////////////////////////////////////
 
 /////////////dispatcher node variables start//////////////////////////
@@ -62,6 +63,7 @@ func Max(x, y int) int {
 func votingBegins(){
 	voterArray=nil
 	maxNoForThisVote=0
+	sent = false
 }
 func runContinuously() {
 	for {
@@ -100,13 +102,14 @@ func runContinuously() {
 		}else if getCurrentRole()=="IDLE"{
 			log.Println("was waiting for someone to become dipatcher for too long")
 			setCurrentRole("validator")
+			maxNoForThisVote=0
 		}
 	}
 }
 func sendTimeOutsToAllNodes(){
 	//
 	log.Println("sending timeouts to all the nodes")
-	chat(globalNode,globalOverlay,"heartbeat"+strconv.Itoa(votingCount))
+	chatWithAllValidators(globalNode,globalOverlay,"heartbeat"+strconv.Itoa(votingCount))
 }
 type chatMessage struct {
 	contents string
@@ -138,7 +141,7 @@ func main() {
 	// Parse flags/options.
 	//pflag.Parse()
 	listOfAddresses = []string{":9001",":9002",":9003"}
-	listOfParticipantAddress = []string{":9006",":9007"}
+	listOfParticipantAddress = []string{":9006"}
 	var temp []string
 	for i :=0;i<len(listOfAddresses);i++{
 		if listOfAddresses[i]!=myAddress{
@@ -288,31 +291,34 @@ func handle(ctx noise.HandlerContext) error {
 		maxNoForThisVote=0
 		chat(globalNode,globalOverlay,"iamanewdispatcher")
 	} else if msg.contents=="positivevote"{
-		log.Println("got positive vote")
 		voterArray = append(voterArray, ctx.ID().Address)
-		if len(voterArray) == len(listOfAddresses)/2{
-			voterArray = append(voterArray, myAddress )
-			v := rand.Intn(len(voterArray))
-			newDispatcher := voterArray[v]
-			b := []string{newDispatcher}
-			if newDispatcher == myAddress{
-				setCurrentRole("dispatcher")
-				myCurrentDispatcher=""
-				maxNoForThisVote=0
-				chat(globalNode,globalOverlay,"iamanewdispatcher")
-			}else{
-				log.Println("informing new coordinator",b)
-				chatToParticularNode(globalNode,globalOverlay,"congratulationsnewdispatcher"+newDispatcher,newDispatcher)
+		log.Println("got positive vote",voterArray)
+		if len(voterArray) >= len(listOfAddresses)/2{
+			if sent == false{
+				sent=true
+				log.Println("got positive vote if")
+				//voterArray = append(voterArray, myAddress )
+				v := rand.Intn(len(voterArray))
+				newDispatcher := voterArray[v]
+				b := []string{newDispatcher}
+				if newDispatcher == myAddress{
+					setCurrentRole("dispatcher")
+					myCurrentDispatcher=""
+					maxNoForThisVote=0
+					chatWithAllValidators(globalNode,globalOverlay,"iamanewdispatcher")
+				}else{
+					log.Println("informing new coordinator",b)
+					chatToParticularNode(globalNode,globalOverlay,"congratulationsnewdispatcher"+newDispatcher,newDispatcher)
+				}
 			}
-		} else if len(voterArray) > len(listOfAddresses)/2{
-			log.Println("Do nothing with this vote")
+
 		}
 	} else if msg.contents=="iamanewdispatcher"{
 		myCurrentDispatcher = ctx.ID().Address
 		maxNoForThisVote=0
 		voterArray = nil
 		log.Println("myCurrentDispatcher is ",myCurrentDispatcher)
-		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(20*t))
+		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(50*t))
 		setCurrentRole("validator")
 	} else if msg.contents=="negativevote"{
 		log.Println("i got negative vote going in idle state")
@@ -485,7 +491,7 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 
 // chat handles sending chat messages and handling chat commands.
 func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line string,addresses string) {
-	log.Println("chat to particular")
+	log.Println("chat to particular node",addresses," msg ",line)
 	switch line {
 	case "/discover":
 		discover(overlay)
@@ -501,30 +507,16 @@ func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line str
 		return
 	}
 
-	for _, id := range overlay.Table().Peers() {
-		found := false
-
-		if addresses==id.Address{
-			found=true
-			break
-		}
-
-		if found==false{
-			continue
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := node.SendMessage(ctx, id.Address, chatMessage{contents: line})
+		err := node.SendMessage(ctx, addresses, chatMessage{contents: line})
 		cancel()
 
 		if err != nil {
-			log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
-				id.Address,
-				id.ID.String()[:printedLength],
+			log.Printf("Failed to send message to %s. Skipping... [error: %s]\n",
+				addresses,
 				err,
 			)
-			continue
 		}
-	}
 }
 
 // chat handles sending chat messages and handling chat commands.
@@ -534,17 +526,26 @@ func chatWithAllValidators(node *noise.Node, overlay *kademlia.Protocol, line st
 		if id==myAddress{
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := node.SendMessage(ctx, id, chatMessage{contents: line})
-		cancel()
+		alive := false
+		for _, id2 := range overlay.Table().Peers() {
+			if id == id2.Address{
+				alive = true
+				break
+			}
+		}
+		if alive{
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := node.SendMessage(ctx, id, chatMessage{contents: line})
+			cancel()
 
-		if err != nil {
-			log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
-				id,
-				//id.ID.String()[:printedLength],
-				err,
-			)
-			continue
+			if err != nil {
+				log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
+					id,
+					//id.ID.String()[:printedLength],
+					err,
+				)
+				continue
+			}
 		}
 	}
 }
@@ -556,17 +557,26 @@ func chatWithAllParticipants(node *noise.Node, overlay *kademlia.Protocol, line 
 		if id==myAddress{
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := node.SendMessage(ctx, id, chatMessage{contents: line})
-		cancel()
+		alive := false
+		for _, id2 := range overlay.Table().Peers() {
+			if id == id2.Address{
+				alive = true
+				break
+			}
+		}
+		if alive{
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := node.SendMessage(ctx, id, chatMessage{contents: line})
+			cancel()
 
-		if err != nil {
-			log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
-				id,
-				//id.ID.String()[:printedLength],
-				err,
-			)
-			continue
+			if err != nil {
+				log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
+					id,
+					//id.ID.String()[:printedLength],
+					err,
+				)
+				continue
+			}
 		}
 	}
 }
