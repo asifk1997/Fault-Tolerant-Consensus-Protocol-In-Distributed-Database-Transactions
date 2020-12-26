@@ -12,12 +12,34 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/perlin-network/noise"
 	"github.com/perlin-network/noise/kademlia"
 )
+// SafeCounter is safe to use concurrently.
+type SafeCounter struct {
+	mu sync.Mutex
+	v  map[string]int
+}
 
+// Inc increments the counter for the given key.
+func (c *SafeCounter) Inc(key string) {
+	c.mu.Lock()
+	// Lock so only one goroutine at a time can access the map c.v.
+	c.v[key]++
+	c.mu.Unlock()
+}
+
+// Value returns the current value of the counter for the given key.
+func (c *SafeCounter) Value(key string) int {
+	c.mu.Lock()
+	// Lock so only one goroutine at a time can access the map c.v.
+	defer c.mu.Unlock()
+	return c.v[key]
+}
+var c = SafeCounter{v: make(map[string]int)}
 //////////////particpant node variables start/////////////////////////
 var lastTimeOutRecieved time.Time = time.Now()
 var myCurrentDispatcher string
@@ -37,9 +59,9 @@ type transaction struct {
 	generatedBy string
 	generatedTime string
 }
-var listTransactions []transaction
-var m = map[string]string{}
+var transactionArray string = ""
 var sent bool = false
+var sent2 bool = false
 ///////////////////////////////////////
 
 /////////////dispatcher node variables start//////////////////////////
@@ -141,7 +163,7 @@ func main() {
 	// Parse flags/options.
 	//pflag.Parse()
 	listOfAddresses = []string{":9001",":9002",":9003"}
-	listOfParticipantAddress = []string{":9006"}
+	listOfParticipantAddress = []string{":9006",":9007"}
 	var temp []string
 	for i :=0;i<len(listOfAddresses);i++{
 		if listOfAddresses[i]!=myAddress{
@@ -324,80 +346,58 @@ func handle(ctx noise.HandlerContext) error {
 	}else if strings.HasPrefix(msg.contents,"transaction"){
 		tr,ms := parseTransaction(msg.contents)
 		if ms == "ready"{
-			listTransactions = append(listTransactions, tr)
+			fmt.Println("got ready msg from ",ctx.ID().Address)
+			transactionArray+=tr
 			v:= strings.Replace(msg.contents,"ready","copy",1)
 			chatWithAllValidators(globalNode,globalOverlay,v)
 		}else if ms == "copy"{
-			u,commit := parseTransactionAndGetKV(msg.contents)
-			if _, ok := m[u]; ok {
-				//do something here
-			} else{
-				m[u] = commit
-				listTransactions=append(listTransactions,tr)
+			u,_ := parseTransaction(msg.contents)
+			if !transactionAlreadyAdded(u){
+				transactionArray+=u
 			}
 			v:=strings.Replace(msg.contents,"copy","copied",1)
 			chatToParticularNode(globalNode,globalOverlay,v,myCurrentDispatcher)
 		} else if ms == "copied"{
-			u, _ := parseTransactionAndGetKV(msg.contents)
-			if value, ok := copiedBy[u]; ok {
-				//do something here
-				found := false
-				for i:=0 ;i <len(value);i++{
-					if value[i] == ctx.ID().Address{
-						found = true
-						break
-					}
+			u, _ := parseTransaction(msg.contents)
+			c.Inc(u)
+			if c.Value(u) >= (len(listOfAddresses)-1)*len(listOfParticipantAddress)/2{
+				fmt.Println("got copied msg from ",ctx.ID().Address)
+				if sent2==false{
+					sent2=true
+					v:=strings.Replace(msg.contents,"copied","commit",1)
+					chatWithAllParticipants(globalNode,globalOverlay,v)
+					v2 :=strings.Replace(msg.contents,"copied","commited",1)
+					chatWithAllValidators(globalNode,globalOverlay,v2)
 				}
-				if !found{
-					value = append(value, ctx.ID().Address)
-				}
-			} else{
-				var z []string
-				z= append(z, ctx.ID().Address)
-				copiedBy[u] = z
-				listTransactions=append(listTransactions,tr)
 			}
-			if len(copiedBy[u]) == len(listOfAddresses)-1{
-				v:=strings.Replace(msg.contents,"copied","commit",1)
-				chatWithAllParticipants(globalNode,globalOverlay,v)
-				nn:=strings.Replace(msg.contents,"copied","commited",1)
-				chatWithAllValidators(globalNode,globalOverlay,nn)
-			}
+			time.AfterFunc(100*time.Millisecond, func() { sent2 = false })
 		} else if ms == "commited"{
-			lines := strings.Split(msg.contents,"_")
-			t:= transaction{transactionString: lines[1],commitStatus: lines[2],generatedBy: lines[3],generatedTime: lines[4]}
-			for i:=0;i<len(listTransactions);i++{
-				ti := listTransactions[i]
-				if ti.transactionString==t.transactionString && ti.generatedTime == t.generatedTime && ti.generatedBy == t.generatedBy{
-					ti.commitStatus = "1"
-				}
-			}
-			fmt.Println(listTransactions)
+			fmt.Println("commited transaction msg to validator",tr)
+			//fmt.Println(listTransactions)
 		} else if ms=="commit"{
-			lines := strings.Split(msg.contents,"_")
-			t:= transaction{transactionString: lines[1],commitStatus: lines[2],generatedBy: lines[3],generatedTime: lines[4]}
-			for i:=0;i<len(listTransactions);i++{
-				ti := listTransactions[i]
-				if ti.transactionString==t.transactionString && ti.generatedTime == t.generatedTime && ti.generatedBy == t.generatedBy{
-					ti.commitStatus = "1"
-				}
-			}
-			fmt.Println(listTransactions)
+			fmt.Println("commit transaction msg to participant",tr)
+			//fmt.Println(listTransactions)
 		}
 	}
 	return nil
 }
 
-func parseTransactionAndGetKV(line string) (string,string){
-	lines := strings.Split(line,"_")
-	commit :=lines[2]
-	key := lines[1]+"_"+lines[3]+"_"+lines[4]
-	return key,commit
+func transactionAlreadyAdded(u string)(bool){
+	ts := strings.Split(transactionArray,"transaction")
+	p:= strings.Replace(u,"transaction","",1)
+	for i:=0;i<len(ts);i++{
+		if ts[i]==p{
+			return true
+		}
+	}
+	return false
 }
-func parseTransaction(line string) (transaction,string){
+
+func parseTransaction(line string) (string,string){
 	lines := strings.Split(line,"_")
-	t:= transaction{transactionString: lines[1],commitStatus: lines[2],generatedBy: lines[3],generatedTime: lines[4]}
-	return t,lines[5]
+	res1 := strings.LastIndex(line, "_")
+	t:= line[:res1]
+	return t,lines[4]
 }
 // help prints out the users ID and commands available.
 func help(node *noise.Node) {
@@ -562,6 +562,7 @@ func chatWithAllParticipants(node *noise.Node, overlay *kademlia.Protocol, line 
 				break
 			}
 		}
+		//fmt.Println("participant ",id," alive ",alive)
 		if alive{
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			err := node.SendMessage(ctx, id, chatMessage{contents: line})

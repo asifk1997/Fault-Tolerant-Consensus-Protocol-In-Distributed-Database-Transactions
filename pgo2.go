@@ -37,7 +37,9 @@ type transaction struct {
 	generatedBy string
 	generatedTime string
 }
+var transactionArray string = ""
 var listTransactions []transaction
+
 ///////////////////////////////////////
 
 /////////////dispatcher node variables start//////////////////////////
@@ -314,18 +316,33 @@ func handle(ctx noise.HandlerContext) error {
 	} else if strings.HasPrefix(msg.contents,"transaction"){
 		tr,ms := parseTransaction(msg.contents)
 		if ms == "begincommit"{
-			listTransactions = append(listTransactions, tr)
+			tr+=tr
 			v:= strings.Replace(msg.contents,"begincommit","ready",1)
 			chatToParticularNode(globalNode,globalOverlay,v,myCurrentDispatcher)
+		}else if ms=="commit"{
+			fmt.Println("commit transaction ",tr)
+			//fmt.Println(listTransactions)
 		}
 	}
 	return nil
 }
 
-func parseTransaction(line string) (transaction,string){
+func transactionAlreadyAdded(u string)(bool){
+	ts := strings.Split(transactionArray,"transaction")
+	p:= strings.Replace(u,"transaction","",1)
+	for i:=0;i<len(ts);i++{
+		if ts[i]==p{
+			return true
+		}
+	}
+	return false
+}
+
+func parseTransaction(line string) (string,string){
 	lines := strings.Split(line,"_")
-	t:= transaction{transactionString: lines[1],commitStatus: lines[2],generatedBy: lines[3],generatedTime: lines[4]}
-	return t,lines[5]
+	res1 := strings.LastIndex(line, "_")
+	t:= line[:res1]
+	return t,lines[4]
 }
 // help prints out the users ID and commands available.
 func help(node *noise.Node) {
@@ -398,9 +415,9 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 	}
 	if strings.HasPrefix(line,"+") || strings.HasPrefix(line,"-"){
 		v:=getCurrentTimestamp()
-		t := transaction{transactionString: line,commitStatus: "0",generatedBy: myAddress,generatedTime: v}
-		listTransactions= append(listTransactions, t)
-		line = "transaction"+"_"+line+"_"+"0"+"_"+myAddress+"_"
+		t:= "transaction"+"_"+ line + "_"+myAddress+"_"+v+"_"
+		transactionArray+=t
+		line = "transaction"+"_"+line+"_"+myAddress+"_"+v+"_"
 		for _, id := range listOfParticipantAddress {
 			if id == myAddress{
 				continue
@@ -450,7 +467,7 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 
 // chat handles sending chat messages and handling chat commands.
 func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line string,addresses string) {
-	log.Println("chat to particular")
+	log.Println("chat to particular node",addresses," msg ",line)
 	switch line {
 	case "/discover":
 		discover(overlay)
@@ -466,28 +483,14 @@ func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line str
 		return
 	}
 
-	for _, id := range overlay.Table().Peers() {
-		found := false
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	err := node.SendMessage(ctx, addresses, chatMessage{contents: line})
+	cancel()
 
-		if addresses==id.Address{
-			found=true
-			break
-		}
-
-		if found==false{
-			continue
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		err := node.SendMessage(ctx, id.Address, chatMessage{contents: line})
-		cancel()
-
-		if err != nil {
-			log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
-				id.Address,
-				id.ID.String()[:printedLength],
-				err,
-			)
-			continue
-		}
+	if err != nil {
+		log.Printf("Failed to send message to %s. Skipping... [error: %s]\n",
+			addresses,
+			err,
+		)
 	}
 }
