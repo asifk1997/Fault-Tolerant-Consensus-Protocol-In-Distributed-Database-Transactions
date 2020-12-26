@@ -201,7 +201,7 @@ func main() {
 	go input(func(line string) {
 		chat(node, overlay, line)
 	})
-	//go runContinuously()
+	go runContinuously()
 	// Wait until Ctrl+C or a termination call is done.
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -264,6 +264,7 @@ func handle(ctx noise.HandlerContext) error {
 		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(20*t))
 		myCurrentDispatcher = ctx.ID().Address
 	} else if strings.HasPrefix(msg.contents,"iamcandidateforround"){
+		return nil
 		if getCurrentRole()=="dispatcher"{
 			chatToParticularNode(globalNode,globalOverlay,"negativevote",ctx.ID().Address)
 		}
@@ -319,12 +320,12 @@ func handle(ctx noise.HandlerContext) error {
 	} else if strings.HasPrefix(msg.contents,"transaction"){
 		tr,ms := parseTransaction(msg.contents)
 		if ms == "begincommit"{
-			tr+=tr
+			transactionArray+=tr
 			v:= strings.Replace(msg.contents,"begincommit","ready",1)
 			chatToParticularNode(globalNode,globalOverlay,v,myCurrentDispatcher)
 		}else if ms=="commit"{
 			fmt.Println("commit transaction ",tr)
-			//fmt.Println(listTransactions)
+			fmt.Println(transactionArray)
 		}
 	}
 	return nil
@@ -409,6 +410,9 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 	case "/peers":
 		peers(overlay)
 		return
+	case "/tr":
+		printTransactionArray()
+		return
 	default:
 	}
 
@@ -468,6 +472,9 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 	}
 }
 
+func printTransactionArray()  {
+	fmt.Println(transactionArray)
+}
 // chat handles sending chat messages and handling chat commands.
 func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line string,addresses string) {
 	log.Println("chat to particular node",addresses," msg ",line)

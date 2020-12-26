@@ -18,6 +18,7 @@ import (
 	"github.com/perlin-network/noise"
 	"github.com/perlin-network/noise/kademlia"
 )
+var mutex = &sync.Mutex{}
 // SafeCounter is safe to use concurrently.
 type SafeCounter struct {
 	mu sync.Mutex
@@ -309,7 +310,7 @@ func handle(ctx noise.HandlerContext) error {
 	} else if strings.HasPrefix(msg.contents,"congratulationsnewdispatcher"){
 		currentRole="dispatcher"
 		maxNoForThisVote=0
-		chat(globalNode,globalOverlay,"iamanewdispatcher")
+		chatWithAllValidators(globalNode,globalOverlay,"iamanewdispatcher")
 	} else if msg.contents=="positivevote"{
 		voterArray = append(voterArray, ctx.ID().Address)
 		log.Println("got positive vote",voterArray)
@@ -347,14 +348,22 @@ func handle(ctx noise.HandlerContext) error {
 		tr,ms := parseTransaction(msg.contents)
 		if ms == "ready"{
 			fmt.Println("got ready msg from ",ctx.ID().Address)
-			transactionArray+=tr
+			mutex.Lock()
+			if !transactionAlreadyAdded(tr){
+				fmt.Println("transaction added ",tr)
+				transactionArray+=tr
+			}
+			mutex.Unlock()
 			v:= strings.Replace(msg.contents,"ready","copy",1)
 			chatWithAllValidators(globalNode,globalOverlay,v)
 		}else if ms == "copy"{
 			u,_ := parseTransaction(msg.contents)
+			mutex.Lock()
 			if !transactionAlreadyAdded(u){
+				fmt.Println("transaction added ",u)
 				transactionArray+=u
 			}
+			mutex.Unlock()
 			v:=strings.Replace(msg.contents,"copy","copied",1)
 			chatToParticularNode(globalNode,globalOverlay,v,myCurrentDispatcher)
 		} else if ms == "copied"{
@@ -385,6 +394,8 @@ func handle(ctx noise.HandlerContext) error {
 func transactionAlreadyAdded(u string)(bool){
 	ts := strings.Split(transactionArray,"transaction")
 	p:= strings.Replace(u,"transaction","",1)
+	fmt.Println("all transactions",ts)
+	fmt.Println("current transaction",p)
 	for i:=0;i<len(ts);i++{
 		if ts[i]==p{
 			return true
@@ -459,6 +470,9 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 	case "/peers":
 		peers(overlay)
 		return
+	case "/tr":
+		printTransactionArray()
+		return
 	default:
 	}
 
@@ -516,7 +530,9 @@ func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line str
 		)
 	}
 }
-
+func printTransactionArray()  {
+	fmt.Println(transactionArray)
+}
 // chat handles sending chat messages and handling chat commands.
 func chatWithAllValidators(node *noise.Node, overlay *kademlia.Protocol, line string) {
 

@@ -53,7 +53,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">
           <url>file://$PROJECT_DIR$/pgo1.go</url>
-          <line>419</line>
+          <line>423</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>
