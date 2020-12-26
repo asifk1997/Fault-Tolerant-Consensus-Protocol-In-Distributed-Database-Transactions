@@ -7,7 +7,6 @@
       <change beforePath="$PROJECT_DIR$/go2.go" beforeDir="false" afterPath="$PROJECT_DIR$/go2.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/go3.go" beforeDir="false" afterPath="$PROJECT_DIR$/go3.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pgo1.go" beforeDir="false" afterPath="$PROJECT_DIR$/pgo1.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pgo2.go" beforeDir="false" afterPath="$PROJECT_DIR$/pgo2.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -53,7 +52,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">
           <url>file://$PROJECT_DIR$/pgo1.go</url>
-          <line>423</line>
+          <line>424</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>

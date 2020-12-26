@@ -223,6 +223,7 @@ func main() {
 	go input(func(line string) {
 		chat(node, overlay, line)
 	})
+	checkRecentTransactions()
 	go runContinuously()
 	// Wait until Ctrl+C or a termination call is done.
 	c := make(chan os.Signal, 1)
@@ -232,10 +233,12 @@ func main() {
 	// Close stdin to kill the input goroutine.
 	check(os.Stdin.Close())
 
-	// Empty println.
+	// Empty println.checkRecentTransactions()
 	println()
 }
-
+func checkRecentTransactions()  {
+	chatWithAllValidators(globalNode,globalOverlay,"whoisdispatcher")
+}
 // input handles inputs from stdin.
 func input(callback func(string)) {
 	r := bufio.NewReader(os.Stdin)
@@ -285,7 +288,11 @@ func handle(ctx noise.HandlerContext) error {
 
 	if strings.HasPrefix(msg.contents,"heartbeat"){
 		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(20*t))
-	} else if strings.HasPrefix(msg.contents,"iamcandidateforround"){
+	} else if msg.contents=="whoisdispatcher"{
+		if getCurrentRole()=="dispatcher"{
+			chatToParticularNode(globalNode,globalOverlay,"iamanewdispatcher"+transactionArray,ctx.ID().Address)
+		}
+	}else if strings.HasPrefix(msg.contents,"iamcandidateforround"){
 		if getCurrentRole()=="dispatcher"{
 			chatToParticularNode(globalNode,globalOverlay,"negativevote",ctx.ID().Address)
 		}
@@ -310,7 +317,7 @@ func handle(ctx noise.HandlerContext) error {
 	} else if strings.HasPrefix(msg.contents,"congratulationsnewdispatcher"){
 		currentRole="dispatcher"
 		maxNoForThisVote=0
-		chatWithAllValidators(globalNode,globalOverlay,"iamanewdispatcher")
+		chatWithAllValidators(globalNode,globalOverlay,"iamanewdispatcher"+transactionArray)
 	} else if msg.contents=="positivevote"{
 		voterArray = append(voterArray, ctx.ID().Address)
 		log.Println("got positive vote",voterArray)
@@ -326,7 +333,7 @@ func handle(ctx noise.HandlerContext) error {
 					setCurrentRole("dispatcher")
 					myCurrentDispatcher=""
 					maxNoForThisVote=0
-					chatWithAllValidators(globalNode,globalOverlay,"iamanewdispatcher")
+					chatWithAllValidators(globalNode,globalOverlay,"iamanewdispatcher"+transactionArray)
 				}else{
 					log.Println("informing new coordinator",b)
 					chatToParticularNode(globalNode,globalOverlay,"congratulationsnewdispatcher"+newDispatcher,newDispatcher)
@@ -334,13 +341,15 @@ func handle(ctx noise.HandlerContext) error {
 			}
 
 		}
-	} else if msg.contents=="iamanewdispatcher"{
+	} else if strings.HasPrefix(msg.contents,"iamanewdispatcher"){
 		myCurrentDispatcher = ctx.ID().Address
 		maxNoForThisVote=0
 		voterArray = nil
 		log.Println("myCurrentDispatcher is ",myCurrentDispatcher)
 		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(50*t))
 		setCurrentRole("validator")
+		transactionArray = strings.Replace(msg.contents,"iamanewdispatcher","",1)
+		fmt.Println("transaction array after",transactionArray)
 	} else if msg.contents=="negativevote"{
 		log.Println("i got negative vote going in idle state")
 		setCurrentRole("IDLE")

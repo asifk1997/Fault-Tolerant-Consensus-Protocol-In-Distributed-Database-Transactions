@@ -201,6 +201,7 @@ func main() {
 	go input(func(line string) {
 		chat(node, overlay, line)
 	})
+
 	go runContinuously()
 	// Wait until Ctrl+C or a termination call is done.
 	c := make(chan os.Signal, 1)
