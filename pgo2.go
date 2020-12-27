@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	_ "github.com/lib/pq"
 	"io"
+	"log"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -30,12 +32,19 @@ var myAddress string = ":9007"
 const t = 50
 var listOfAddresses []string
 var listOfParticipantAddress []string
-
+const (
+	host     = "localhost"
+	port     = 5432
+	user     = "postgres"
+	password = "postgres"
+	dbname   = "go2"
+)
 type transaction struct {
 	transactionString string
 	commitStatus string
 	generatedBy string
 	generatedTime string
+	commitedBy string
 }
 var transactionArray string = ""
 var listTransactions []transaction
@@ -133,11 +142,29 @@ const printedLength = 8
 ////////////////////global vars/////////////////////
 var globalNode *noise.Node
 var globalOverlay *kademlia.Protocol
+var globalDb *sql.DB
 ///////////////////////////////////////////////////
 // An example chat application on Noise.
 func main() {
 	// Parse flags/options.
 	//pflag.Parse()
+	// Parse flags/options.
+	//pflag.Parse()
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+	globalDb=db
+	fmt.Println("Successfully connected!")
 	listOfAddresses = []string{":9001",":9002",":9003"}
 	listOfParticipantAddress = []string{":9006",":9007"}
 	var temp []string
@@ -198,6 +225,7 @@ func main() {
 	go input(func(line string) {
 		chat(node, overlay, line)
 	})
+	checkRecentTransactions()
 	go runContinuously()
 	// Wait until Ctrl+C or a termination call is done.
 	c := make(chan os.Signal, 1)
@@ -210,7 +238,9 @@ func main() {
 	// Empty println.
 	println()
 }
-
+func checkRecentTransactions()  {
+	chatWithAllValidators(globalNode,globalOverlay,"whoisdispatcher")
+}
 // input handles inputs from stdin.
 func input(callback func(string)) {
 	r := bufio.NewReader(os.Stdin)
@@ -283,6 +313,7 @@ func handle(ctx noise.HandlerContext) error {
 		chat(globalNode,globalOverlay,"iamanewdispatcher")
 		votingCount++
 	} else if msg.contents=="positivevote"{
+		return nil
 		log.Println("got positive vote")
 		voterArray = append(voterArray, ctx.ID().Address)
 		if len(voterArray) == len(listOfAddresses)/2{
@@ -302,15 +333,15 @@ func handle(ctx noise.HandlerContext) error {
 		}else if len(voterArray) > len(listOfAddresses)/2{
 			log.Println("Do nothing with this vote")
 		}
-	} else if msg.contents=="iamanewdispatcher"{
+	} else if strings.HasPrefix(msg.contents,"iamanewdispatcher"){
 		myCurrentDispatcher = ctx.ID().Address
 		maxNoForThisVote=0
 		voterArray = nil
-		votingCount++
-		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(20*t))
 		log.Println("myCurrentDispatcher is ",myCurrentDispatcher)
+		lastTimeOutRecieved = time.Now().Add(time.Millisecond*(50*t))
 		setCurrentRole("validator")
-
+		transactionArray = strings.Replace(msg.contents,"iamanewdispatcher","",1)
+		fmt.Println("transaction array after",transactionArray)
 	} else if msg.contents=="negativevote"{
 		log.Println("i got negative vote going in IDLE state")
 		setCurrentRole("IDLE")
@@ -321,13 +352,37 @@ func handle(ctx noise.HandlerContext) error {
 			v:= strings.Replace(msg.contents,"begincommit","ready",1)
 			chatToParticularNode(globalNode,globalOverlay,v,myCurrentDispatcher)
 		}else if ms=="commit"{
+			lines := strings.Split(tr,"_")
+			upd := lines[1]
+			upd_int,_ :=strconv.Atoi(upd)
+			sqlStatement := `UPDATE "Transactions" set "Value" = "Value" + ($1) 
+    			where "Transactions"."Index" = 1`
+			_, err = globalDb.Exec(sqlStatement, upd_int)
+			if err != nil {
+				panic(err)
+			} else {
+				fmt.Println("\nRow Updated successfully!")
+			}
 			fmt.Println("commit transaction ",tr)
+			calculateCommitTime(tr)
 			fmt.Println(transactionArray)
 		}
 	}
 	return nil
 }
-
+func calculateCommitTime (tr string){
+	lines := strings.Split(tr,"_")
+	fmt.Println(lines,lines[1])
+	no := lines[3]
+	itime,err := strconv.ParseInt(no,10,64)
+	if err!=nil{
+		return
+	}
+	fmt.Println(lines)
+	ftime := time.Now().UnixNano() / (int64(time.Millisecond)/int64(time.Nanosecond))
+	diff := ftime - itime
+	fmt.Println("timetaken for commit",ftime,itime,diff)
+}
 func transactionAlreadyAdded(u string)(bool){
 	ts := strings.Split(transactionArray,"transaction")
 	p:= strings.Replace(u,"transaction","",1)
@@ -396,7 +451,7 @@ func peers(overlay *kademlia.Protocol) {
 	log.Printf("You know %d peer(s): [%v]\n", len(ids), strings.Join(str, ", "))
 }
 func getCurrentTimestamp() string {
-	return strconv.Itoa(int(time.Now().Unix()))
+	return strconv.FormatInt(int64(time.Now().UnixNano() / (int64(time.Millisecond)/int64(time.Nanosecond))),10)
 }
 // chat handles sending chat messages and handling chat commands.
 func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
@@ -498,5 +553,37 @@ func chatToParticularNode(node *noise.Node, overlay *kademlia.Protocol, line str
 			addresses,
 			err,
 		)
+	}
+}
+
+
+// chat handles sending chat messages and handling chat commands.
+func chatWithAllValidators(node *noise.Node, overlay *kademlia.Protocol, line string) {
+
+	for _, id := range listOfAddresses {
+		if id==myAddress{
+			continue
+		}
+		alive := false
+		for _, id2 := range overlay.Table().Peers() {
+			if id == id2.Address{
+				alive = true
+				break
+			}
+		}
+		if alive{
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := node.SendMessage(ctx, id, chatMessage{contents: line})
+			cancel()
+
+			if err != nil {
+				log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
+					id,
+					//id.ID.String()[:printedLength],
+					err,
+				)
+				continue
+			}
+		}
 	}
 }
