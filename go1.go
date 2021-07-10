@@ -177,8 +177,9 @@ func main() {
 	listOfAddresses = temp
 	// Create a new configured node.
 	address,_ := strconv.Atoi(myAddress[1:])
+	//networkId := net.ParseIP("0.0.0.0")
 	node, err := noise.NewNode(
-		//noise.WithNodeBindHost(*hostFlag),
+		//noise.WithNodeBindHost(networkId),
 		noise.WithNodeBindPort(uint16(address)),
 		//noise.WithNodeAddress(*addressFlag),
 	)

@@ -477,6 +477,29 @@ func chat(node *noise.Node, overlay *kademlia.Protocol, line string) {
 		t:= "transaction"+"_"+ line + "_"+myAddress+"_"+v+"_"
 		transactionArray+=t
 		line = "transaction"+"_"+line+"_"+myAddress+"_"+v+"_"
+		allParticipantsAlive := true
+		for _,id := range listOfParticipantAddress{
+			if id==myAddress{
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_,err := node.Ping(ctx, id)
+			cancel()
+
+			if err != nil {
+				log.Printf("Failed to send message to %s(%s). Skipping... [error: %s]\n",
+					id,
+					err,
+				)
+				allParticipantsAlive=false
+				continue
+			}
+		}
+		if !allParticipantsAlive{
+			fmt.Println("All participants are not alive , rollback transaction ")
+			return
+		}
+		transactionArray+=t
 		for _, id := range listOfParticipantAddress {
 			if id == myAddress{
 				continue

@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"io"
+	"log"
 	"math/rand"
+
+	//"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -173,10 +175,10 @@ func main() {
 	}
 	listOfAddresses = temp
 	// Create a new configured node.
-	address,_ := strconv.Atoi(myAddress[1:])
+	//address,_ := strconv.Atoi(myAddress[1:])
 	node, err := noise.NewNode(
-		//noise.WithNodeBindHost(*hostFlag),
-		noise.WithNodeBindPort(uint16(address)),
+		//noise.WithNodeBindHost(net.ParseIP("192.168.1.116")),
+		noise.WithNodeBindPort(uint16(9002)),
 		//noise.WithNodeAddress(*addressFlag),
 	)
 	check(err)
